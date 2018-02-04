@@ -1,0 +1,10 @@
+/* Substance Component styles */
+@import '../node_modules/substance/substance.css';
+
+/* You may want to use your own reset and pagestyle
+@import '../node_modules/substance/substance-reset.css';
+@import '../node_modules/substance/substance-pagestyle.css';
+*/
+
+/* simple-writer*/
+/* @import '../lib/simple-writer/_simple-writer.css'; */
