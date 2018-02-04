@@ -2,6 +2,7 @@ import {Configurator, EditorSession, DefaultLabelProvider, JSONConverter} from '
 import SimpleWriter from '../lib/simple-writer/SimpleWriter'
 import SimpleWriterPackage from '../lib/simple-writer/SimpleWriterPackage'
 import fixture from './fixture'
+import DragManager from '../lib/override/ui/DragManager';
 
 export default function(target, options) {
     console.log('Mouting', options);
@@ -15,6 +16,7 @@ export default function(target, options) {
     cfg.getLabelProvider = function () {
         return new DefaultLabelProvider(this.config.labels, 'ca');
     };
+    cfg.setDragManagerClass(DragManager);
 
     class SaveHandler {
         saveDocument(params) {
@@ -48,7 +50,10 @@ export default function(target, options) {
     // This is the data structure manipulated by the editor
     let editorSession = new EditorSession(doc, {
         configurator: cfg,
-        lang: 'ca'
+        lang: 'ca',
+        context: {
+            DOMRoot: target
+        }
     });
     editorSession.setLanguage('ca');
 

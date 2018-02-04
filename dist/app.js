@@ -43261,6 +43261,553 @@ var fixture = function(tx) {
     body.show('p1');
 };
 
+var DragManager$1 = (function (EventEmitter$$1) {
+  function DragManager$$1(customDropHandlers, context) {
+        EventEmitter$$1.call(this);
+
+        this.context = context;
+
+        var dropAssetHandlers = [];
+        var moveInlineHandlers = [];
+        customDropHandlers.forEach(function (h) {
+            // legacy: default type = 'asset'
+            var type = h.type || 'drop-asset';
+            switch (type) {
+                case 'drop-asset': {
+                    dropAssetHandlers.push(h);
+                    break
+                }
+                case 'move-inline': {
+                    moveInlineHandlers.push(h);
+                    break
+                }
+                default:
+                    console.warn('Unknown type of drop handler.', h);
+            }
+        });
+
+        // TODO: This could live in the configurator at some point
+        this.dropHandlers = [
+            // source is a PropertySelection, target is a property
+            new MoveInline$1(moveInlineHandlers),
+            // source is a NodeSelection, target is a container position
+            new MoveBlockNode$1(),
+            // drop external files
+            new InsertNodes$1(dropAssetHandlers, this.context),
+            // dynamic custom handler, activated via custom dropzone
+            // not via configuration
+            new CustomHandler$1() ];
+        if (platform.inBrowser) {
+            this.el = DefaultDOMElement.wrapNativeElement(document);
+            this.el.on('dragstart', this.onDragStart, this);
+            // this.el.on('dragend', this.onDragEnd, this)
+            this.el.on('drop', this.onDragEnd, this);
+            this.el.on('dragenter', this.onDragEnter, this);
+            this.el.on('dragexit', this.onDragExit, this);
+            this.el.on('mousedown', this.onMousedown, this);
+        }
+    }
+
+  if ( EventEmitter$$1 ) DragManager$$1.__proto__ = EventEmitter$$1;
+  DragManager$$1.prototype = Object.create( EventEmitter$$1 && EventEmitter$$1.prototype );
+  DragManager$$1.prototype.constructor = DragManager$$1;
+
+    DragManager$$1.prototype.dispose = function dispose () {
+        if (this.el) {
+            this.el.off(this);
+        }
+    };
+
+    DragManager$$1.prototype.onDragStart = function onDragStart (e) {
+        // console.log('#### DragManager.onDragStart')
+        this._initDrag(e, { external: false });
+        // Ensure we have a small dragIcon, so dragged content does not eat up
+        // all screen space.
+        var img = document.createElement("img");
+        img.src = "data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==";
+        e.dataTransfer.setDragImage(img, 0, 0);
+        // TODO: the following might probably not work in FF as it disallows setting the drag data
+        // Note: setData('text/html', ... ) is necessary so that the browser shows
+        // the target caret while dragging, the content must be allowed to drop inline
+        // console.log('#### dragState.mode', )
+        // TODO: at this point we should do it similar as in Clipboard
+        // i.e. copy the selection and export it to HTML
+        if (this.dragState.mode === 'inline') {
+            e.dataTransfer.setData('text/html', img.outerHTML);
+        } else {
+            // otherwise we clear the data trying to make the caret
+            // invisible this way
+            e.dataTransfer.setData('text/html', '<div></div>');
+        }
+        // console.log('####', this.dragState)
+    };
+
+    /*
+      When drag starts externally, e.g. draggin a file into the workspace
+    */
+    DragManager$$1.prototype.onDragEnter = function onDragEnter (e) {
+        if (!this.dragState) {
+            // console.log('onDragEnter(e)', e)
+            this._initDrag(e, {external: true});
+        }
+    };
+
+    DragManager$$1.prototype.onDragEnd = function onDragEnd (event) {
+        if (event.__reserved__) { return }
+        // console.log('onDragEnd', event)
+        if (this.dragState) {
+            event.stopPropagation();
+            event.preventDefault();
+            // HACK: there is no way to know if Dropzones wants to
+            // extend state, as it can only do it on drop
+            this._onDragEnd(event);
+        }
+    };
+
+    DragManager$$1.prototype.onDragExit = function onDragExit (e) {
+        if (platform.isFF) {
+            // FF fires this quite rapidly
+        } else {
+            // TODO: OTOH, we need to find out if this
+            // is really necessary in the other browsers
+            // console.log('onDragExit', e)
+            this._onDragEnd(e);
+        }
+    };
+
+    DragManager$$1.prototype.extendDragState = function extendDragState (extState) {
+        Object.assign(this.dragState, extState);
+    };
+
+    // used to at least reset on the next mousedown
+    // TODO: figure out if we could make this only 'once'
+    DragManager$$1.prototype.onMousedown = function onMousedown (event) {
+        if (this.dragState) {
+            this.dragState = null;
+            this._onDragEnd(event);
+        }
+    };
+
+    DragManager$$1.prototype._onDragEnd = function _onDragEnd (event) {
+        if (!this.dragState) {
+            // TODO: There are cases where _onDragEnd is called manually via
+            // handleDrop and another time via the native dragend event. check
+            // why this happens and how it can be avoided
+            console.warn('Not in a valid drag state.');
+        } else {
+            this._handleDrop(event);
+        }
+        this.emit('drag:finished');
+        this.dragState = null;
+    };
+
+    /*
+      Called by Dropzones component after drop received
+    */
+    DragManager$$1.prototype._handleDrop = function _handleDrop (e) {
+        var this$1 = this;
+
+        var dragState = this.dragState;
+        var i, handler;
+        var match = false;
+        dragState.event = e;
+        dragState.data = this._getData(e);
+        // Run through drop handlers and call the first that matches
+        for (i = 0; i < this.dropHandlers.length && !match; i++) {
+            handler = this$1.dropHandlers[i];
+            match = handler.match(dragState);
+        }
+        if (match) {
+            var editorSession = this.context.editorSession;
+            editorSession.transaction(function (tx) {
+                handler.drop(tx, dragState);
+            });
+        } else {
+            console.error('No drop handler could be found.');
+        }
+    };
+
+    /*
+      Initializes dragState, which encapsulate state through the whole
+      drag + drop operation.
+
+      ATTENTION: This can not be debugged properly in Chrome
+    */
+    DragManager$$1.prototype._initDrag = function _initDrag (event, options) {
+        // TODO: we need to figure out how to enable dragging cursors
+        // e.g., when dragging an inline node containing an img, it looks
+        // nice, showing the target caret and a dragging cursor.
+        // Doing the same just with text content does show the forbidden symbol
+
+        // console.log('_initDrag')
+        var sel = this._getSelection();
+        var dragState = Object.assign({ startEvent: event }, options);
+        this.dragState = dragState;
+
+        // external drag
+        // Note: we only consider drops on the block-level or with custom dropzones
+        if (dragState.external) {
+            dragState.selectionDrag = false;
+            dragState.sourceSelection = null;
+            dragState.scrollPanes = this._getSurfacesGroupedByScrollPane();
+            this.emit('drag:started', dragState);
+            return
+        }
+
+        // Note: selection drags are always without drop-zones,
+        // but using the native cursor
+        var isSelectionDrag = (
+            (sel.isPropertySelection() || sel.isContainerSelection()) &&
+            isMouseInsideDOMSelection(event)
+        );
+        if (isSelectionDrag) {
+            // TODO: we do not support dragging of ContainerSelection yet
+            if (sel.isContainerSelection()) {
+                console.warn('Dragging of ContainerSelection is not supported yet.');
+                return _stop()
+            }
+            // console.log('DragManager: starting a selection drag', sel.toString())
+            dragState.inline = true;
+            dragState.selectionDrag = true;
+            dragState.sourceSelection = sel;
+            // TODO: should we emit for dropzones?
+            return
+        }
+        var comp = Component.unwrap(event.target);
+        if (!comp) { return _stop() }
+        var isolatedNodeComponent;
+        if (comp._isInlineNodeComponent) {
+            isolatedNodeComponent = comp;
+            dragState.inline = true;
+            dragState.sourceNode = comp.props.node;
+        } else {
+            isolatedNodeComponent = comp.context.isolatedNodeComponent;
+        }
+        if (!isolatedNodeComponent) { return _stop() }
+        var surface = isolatedNodeComponent.context.surface;
+        // dragging an InlineNode
+        if(isolatedNodeComponent._isInlineNodeComponent) {
+            var inlineNode = isolatedNodeComponent.props.node;
+            dragState.inline = true;
+            dragState.selectionDrag = true;
+            dragState.sourceSelection = {
+                type: 'property',
+                path: inlineNode.start.path,
+                startOffset: inlineNode.start.offset,
+                endOffset: inlineNode.end.offset,
+                containerId: surface.getContainerId(),
+                surfaceId: surface.id
+            };
+            return
+        }
+        // dragging an IsolatedNode
+        // console.log('DragManager: started dragging a node or from external')
+        dragState.selectionDrag = false;
+        dragState.nodeDrag = true;
+        dragState.sourceSelection = {
+            type: 'node',
+            nodeId: isolatedNodeComponent.props.node.id,
+            containerId: surface.getContainerId(),
+            surfaceId: surface.id
+        };
+        // We store the scrollPanes in dragState so the Dropzones component
+        // can use it to compute dropzones per scrollpane for each contained
+        // surface
+        dragState.scrollPanes = this._getSurfacesGroupedByScrollPane();
+        // console.log('... emitting dragstart for Dropzones')
+        this.emit('drag:started', dragState);
+
+        function _stop() {
+            // console.log('.... NOPE')
+            event.preventDefault();
+            event.stopPropagation();
+        }
+    };
+
+    DragManager$$1.prototype._getSurfacesGroupedByScrollPane = function _getSurfacesGroupedByScrollPane () {
+        // We need to determine all ContainerEditors and their scrollPanes; those have the drop
+        // zones attached
+        var surfaces = this.context.surfaceManager.getSurfaces();
+        var scrollPanes = {};
+        surfaces.forEach(function (surface) {
+            // Skip for everything but container editors
+            if (!surface.isContainerEditor()) { return }
+            var scrollPane = surface.context.scrollPane;
+            var scrollPaneName = scrollPane.getName();
+            var surfaceName = surface.getName();
+            if (!scrollPanes[scrollPaneName]) {
+                var surfaces = {};
+                surfaces[surfaceName] = surface;
+                scrollPanes[scrollPaneName] = { scrollPane: scrollPane, surfaces: surfaces };
+            } else {
+                scrollPanes[scrollPaneName].surfaces[surfaceName] = surface;
+            }
+        });
+        return scrollPanes
+    };
+
+    DragManager$$1.prototype._getSelection = function _getSelection () {
+        return this.context.editorSession.getSelection()
+    };
+
+    DragManager$$1.prototype._getComponents = function _getComponents (targetEl) {
+        var res = [];
+        var curr = targetEl;
+        while (curr) {
+            var comp = Component.getComponentForDOMElement(curr);
+            if (comp) {
+                res.unshift(comp);
+                if(comp._isSurface) {
+                    return res
+                }
+            }
+            curr = curr.parentNode;
+        }
+        return null
+    };
+
+    DragManager$$1.prototype._getIsolatedNodeOrContainerChild = function _getIsolatedNodeOrContainerChild (targetEl) {
+        var parent, current;
+        current = targetEl;
+        parent = current.parentNode;
+        while(parent) {
+            if (parent._comp && parent._comp._isContainerEditor) {
+                return current._comp
+            } else if (current._comp && current._comp._isIsolatedNode) {
+                return current._comp
+            }
+            current = parent;
+            parent = current.parentNode;
+        }
+    };
+
+    /*
+      Following best practice from Mozilla for URI extraction
+
+      See: https://developer.mozilla.org/en-US/docs/Web/Guide/HTML/Recommended_Drag_Types#link
+    */
+    DragManager$$1.prototype._extractUris = function _extractUris (dataTransfer) {
+        var uris = [];
+        var rawUriList = dataTransfer.getData('text/uri-list');
+        if (rawUriList) {
+            uris = rawUriList.split('\n').filter(function(item) {
+                return !item.startsWith('#')
+            });
+        }
+        return uris
+    };
+
+    /*
+      Extracts information from e.dataTransfer (files, uris, text, html)
+    */
+    DragManager$$1.prototype._getData = function _getData (e) {
+        var dataTransfer = e.dataTransfer;
+        if (dataTransfer) {
+            return {
+                files: Array.prototype.slice.call(dataTransfer.files),
+                uris: this._extractUris(dataTransfer),
+                text: dataTransfer.getData('text/plain'),
+                html: dataTransfer.getData('text/html')
+            }
+        }
+    };
+
+  return DragManager$$1;
+}(EventEmitter));
+
+/*
+  Moves a selected node to a new location.
+
+  Used as a drop handler for internal drags with NodeSelections.
+*/
+var MoveBlockNode$1 = (function (DragAndDropHandler$$1) {
+  function MoveBlockNode () {
+    DragAndDropHandler$$1.apply(this, arguments);
+  }
+
+  if ( DragAndDropHandler$$1 ) MoveBlockNode.__proto__ = DragAndDropHandler$$1;
+  MoveBlockNode.prototype = Object.create( DragAndDropHandler$$1 && DragAndDropHandler$$1.prototype );
+  MoveBlockNode.prototype.constructor = MoveBlockNode;
+
+  MoveBlockNode.prototype.match = function match (dragState) {
+        var ref = dragState.dropParams;
+        var insertPos = ref.insertPos;
+        // - sourceSeletion must be a NodeSelection
+        return (!dragState.external && dragState.nodeDrag &&
+            dragState.dropType === 'place' && insertPos >= 0
+        )
+    };
+
+    MoveBlockNode.prototype.drop = function drop (tx, dragState) {
+        // - remember current selection (node that is dragged)
+        // - delete current selection (removes node from original position)
+        // - determine node selection based on given insertPos
+        // - paste node at new insert position
+        var ref = dragState.dropParams;
+        var insertPos = ref.insertPos;
+        tx.setSelection(dragState.sourceSelection);
+        var copy = tx.copySelection();
+        // just clear, but don't merge or don't insert a new node
+        tx.deleteSelection({ clear: true });
+        var containerId = dragState.targetSurface.getContainerId();
+        var surfaceId = dragState.targetSurface.getName();
+        var container = tx.get(containerId);
+        var targetNodeId = container.getNodeIdAt(insertPos);
+        var insertMode = 'before';
+        if (!targetNodeId) {
+            targetNodeId = container.getNodeIdAt(insertPos-1);
+            insertMode = 'after';
+        }
+        tx.setSelection({
+            type: 'node',
+            nodeId: targetNodeId,
+            mode: insertMode,
+            containerId: containerId,
+            surfaceId: surfaceId
+        });
+        tx.paste(copy);
+    };
+
+  return MoveBlockNode;
+}(DragAndDropHandler));
+
+var MoveInline$1 = (function (DragAndDropHandler$$1) {
+  function MoveInline () {
+    DragAndDropHandler$$1.apply(this, arguments);
+  }
+
+  if ( DragAndDropHandler$$1 ) MoveInline.__proto__ = DragAndDropHandler$$1;
+  MoveInline.prototype = Object.create( DragAndDropHandler$$1 && DragAndDropHandler$$1.prototype );
+  MoveInline.prototype.constructor = MoveInline;
+
+  MoveInline.prototype.match = function match (dragState) {
+        return !dragState.external && dragState.inline
+    };
+
+    MoveInline.prototype.drop = function drop (tx, dragState) {
+        var event = dragState.event;
+        var sourceSel = dragState.sourceSelection;
+        var wrange = getDOMRangeFromEvent(event);
+        if (!wrange) { return }
+        var comp = Component.unwrap(event.target);
+        if (!comp) { return }
+        var domSelection = comp.context.domSelection;
+        if (!domSelection) { return }
+        var range = domSelection.mapDOMRange(wrange);
+        if (!range) { return }
+        var targetSel = tx.getDocument()._createSelectionFromRange(range);
+
+        // TODO: iterate custom move-inline handlers
+        tx.selection = sourceSel;
+        var snippet = tx.copySelection();
+        tx.deleteSelection();
+        tx.selection = operationHelpers.transformSelection(targetSel, tx);
+        tx.paste(snippet);
+    };
+
+  return MoveInline;
+}(DragAndDropHandler));
+
+var InsertNodes$1 = (function (DragAndDropHandler$$1) {
+  function InsertNodes(assetHandlers, context) {
+        DragAndDropHandler$$1.call(this);
+        this.assetHandlers = assetHandlers;
+        this.context = context;
+    }
+
+  if ( DragAndDropHandler$$1 ) InsertNodes.__proto__ = DragAndDropHandler$$1;
+  InsertNodes.prototype = Object.create( DragAndDropHandler$$1 && DragAndDropHandler$$1.prototype );
+  InsertNodes.prototype.constructor = InsertNodes;
+
+    InsertNodes.prototype.match = function match (dragState) {
+        return dragState.dropType === 'place' && dragState.external
+    };
+
+    InsertNodes.prototype.drop = function drop (tx, dragState) {
+        var this$1 = this;
+
+        var ref = dragState.dropParams;
+        var insertPos = ref.insertPos;
+        var files = dragState.data.files;
+        var uris = dragState.data.uris;
+        var containerId = dragState.targetSurface.getContainerId();
+        var surfaceId = dragState.targetSurface.id;
+        var container = tx.get(containerId);
+        var targetNode = container.getNodeIdAt(insertPos);
+        var insertMode = 'before';
+        if (!targetNode) {
+            targetNode = container.getNodeIdAt(insertPos-1);
+            insertMode = 'after';
+        }
+        tx.setSelection({
+            type: 'node',
+            nodeId: targetNode,
+            mode: insertMode,
+            containerId: containerId,
+            surfaceId: surfaceId
+        });
+        if (files.length > 0) {
+            files.forEach(function (file) {
+                this$1._callHandlers(tx, {
+                    file: file,
+                    type: 'file'
+                });
+            });
+        } else if (uris.length > 0) {
+            uris.forEach(function (uri) {
+                this$1._callHandlers(tx, {
+                    uri: uri,
+                    type: 'uri'
+                });
+            });
+        } else {
+            console.info('TODO: implement html/text drop here');
+        }
+    };
+
+    InsertNodes.prototype._callHandlers = function _callHandlers (tx, params) {
+        var this$1 = this;
+
+        var i, handler;
+        for (i = 0; i < this.assetHandlers.length; i++) {
+            handler = this$1.assetHandlers[i];
+
+            var match = handler.match(params, this$1.context);
+            if (match) {
+                handler.drop(tx, params, this$1.context);
+                break
+            }
+        }
+    };
+
+  return InsertNodes;
+}(DragAndDropHandler));
+
+/*
+  Built-in handler that calls a custom handler, specified
+  on the component (e.g. see ImageComponent).
+*/
+var CustomHandler$1 = (function (DragAndDropHandler$$1) {
+  function CustomHandler () {
+    DragAndDropHandler$$1.apply(this, arguments);
+  }
+
+  if ( DragAndDropHandler$$1 ) CustomHandler.__proto__ = DragAndDropHandler$$1;
+  CustomHandler.prototype = Object.create( DragAndDropHandler$$1 && DragAndDropHandler$$1.prototype );
+  CustomHandler.prototype.constructor = CustomHandler;
+
+  CustomHandler.prototype.match = function match (dragState) {
+        return dragState.dropType === 'custom'
+    };
+
+    CustomHandler.prototype.drop = function drop (tx, dragState) {
+        // Delegate handling to component which set up the custom dropzone
+        dragState.component.handleDrop(tx, dragState);
+    };
+
+  return CustomHandler;
+}(DragAndDropHandler));
+
 var app = function(target, options) {
     console.log('Mouting', options);
 
@@ -43273,6 +43820,7 @@ var app = function(target, options) {
     cfg.getLabelProvider = function () {
         return new DefaultLabelProvider(this.config.labels, 'ca');
     };
+    cfg.setDragManagerClass(DragManager$1);
 
     var SaveHandler = function SaveHandler () {};
 
@@ -43306,7 +43854,10 @@ var app = function(target, options) {
     // This is the data structure manipulated by the editor
     var editorSession = new EditorSession(doc, {
         configurator: cfg,
-        lang: 'ca'
+        lang: 'ca',
+        context: {
+            DOMRoot: target
+        }
     });
     editorSession.setLanguage('ca');
 
