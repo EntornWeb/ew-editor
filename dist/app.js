@@ -43298,7 +43298,7 @@ var DragManager$1 = (function (EventEmitter$$1) {
             // not via configuration
             new CustomHandler$1() ];
         if (platform.inBrowser) {
-            this.el = DefaultDOMElement.wrapNativeElement(document);
+            this.el = DefaultDOMElement.wrapNativeElement(context.DOMRoot || document);
             this.el.on('dragstart', this.onDragStart, this);
             // this.el.on('dragend', this.onDragEnd, this)
             this.el.on('drop', this.onDragEnd, this);
