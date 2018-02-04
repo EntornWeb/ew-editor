@@ -43109,6 +43109,7 @@ var SimpleWriterPackage = {
     name: 'simple-writer',
     configure: function (config) {
         config.defineSchema({
+            version: 1,
             name: 'simple-article',
             DocumentClass: Document,
             defaultTextType: 'paragraph'
@@ -43290,11 +43291,11 @@ var app = function(target, options) {
     cfg.import(SimpleWriterPackage);
 
     // Import article from the given input
-    var doc = cfg.createArticle(fixture);
+    var doc = cfg.createDocument(fixture);
     if (setup.input && setup.input.value) {
         try {
             console.info('Importing document');
-            var json = JSON.parse(input.value);
+            var json = JSON.parse(setup.input.value);
             var converter = new JSONConverter();
             converter.importDocument(doc, json);
         } catch(err) {

@@ -33,11 +33,11 @@ export default function(target, options) {
     cfg.import(SimpleWriterPackage);
 
     // Import article from the given input
-    let doc = cfg.createArticle(fixture);
+    let doc = cfg.createDocument(fixture);
     if (setup.input && setup.input.value) {
         try {
             console.info('Importing document');
-            const json = JSON.parse(input.value);
+            const json = JSON.parse(setup.input.value);
             const converter = new JSONConverter();
             converter.importDocument(doc, json);
         } catch(err) {
