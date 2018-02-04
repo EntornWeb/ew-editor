@@ -3,8 +3,13 @@ import SimpleWriter from '../lib/simple-writer/SimpleWriter'
 import SimpleWriterPackage from '../lib/simple-writer/SimpleWriterPackage'
 import fixture from './fixture'
 
-export default function(target, input) {
-    console.log('Mouting', target, input);
+export default function(target, options) {
+    console.log('Mouting', options);
+
+    const setup = Object.assign({
+        input: null,
+        onSave: (value) => null,
+    }, options);
 
     let cfg = new Configurator();
     cfg.getLabelProvider = function () {
@@ -14,8 +19,10 @@ export default function(target, input) {
     class SaveHandler {
         saveDocument(params) {
             return new Promise((resolve) => {
-                let doc = params.editorSession.getDocument();
-                input.value = JSON.stringify(doc.toJSON());
+                const doc = params.editorSession.getDocument();
+                const value = JSON.stringify(doc.toJSON());
+                if (setup.input) setup.input.value = value;
+                setup.onSave(value);
                 resolve();
             });
         }
@@ -27,7 +34,7 @@ export default function(target, input) {
 
     // Import article from the given input
     let doc = cfg.createArticle(fixture);
-    if (input.value) {
+    if (setup.input && setup.input.value) {
         try {
             console.info('Importing document');
             const json = JSON.parse(input.value);
@@ -49,9 +56,6 @@ export default function(target, input) {
     let component = SimpleWriter.mount({
         editorSession: editorSession
     }, target);
-    setInterval(() => {
-        editorSession.save();
-    }, 1000);
 
     return {
         editorSession,

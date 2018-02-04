@@ -13,10 +13,16 @@
     </form>
 
     <script type="text/javascript">
-      var editor = app(
-          document.getElementById('editor'),
-          document.getElementById('doc')
+      var editor = app(document.getElementById('editor'), {
+          input: document.getElementById('doc'),
+          onSave: function(value) {
+              console.log('Saved', value);
+          }
+        }
       );
+      setInterval(function() {
+          editor.editorSession.save();
+      }, 1000)
     </script>
   </body>
 </html>

@@ -637,6 +637,7 @@
 }
 .sc-edit-link-tool {
   display: flex;
+  align-items: center;
 }
 .sc-edit-link-tool > * {
   flex: 0 0 0;
@@ -669,6 +670,8 @@
   left: 30px;
   right: 30px;
   top: 30px;
+  bottom: 30px;
+  overflow: auto;
   background: white;
   box-shadow: 0 0 25px 0 rgba(0,0,0,0.8);
 }
