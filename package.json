@@ -12,7 +12,7 @@
     "build": "node make",
     "start": "node make -s -w"
   },
-  "version": "1.0.0",
+  "version": "1.0.1",
   "files": [
     "app",
     "dist",
